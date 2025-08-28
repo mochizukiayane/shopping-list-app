@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>買い出しリスト</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+    <div class="container my-4">
+        <h1 class="text-center mb-4">🍻 飲み会買い出しリスト</h1>
+
+        <div class="card mb-4 budget-panel">
+            <div class="card-body text-center">
+                <h4>予算管理</h4>
+                <p>予算: <span id="budget-amount">{{ "{:,}".format(data['budget']) }}</span>円</p>
+                <p>合計支出: <span id="total-cost">0</span>円</p>
+                <p id="remaining-budget" class="fw-bold">残り予算: 0円</p>
+                <div class="input-group mt-3">
+                    <input type="number" class="form-control" id="new-budget-input" placeholder="新しい予算を入力">
+                    <button class="btn btn-primary" id="update-budget-btn">更新</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h4>総合集計サマリー</h4>
+                <ul class="list-group list-group-flush">
+                    {% for category in data['items'] %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        {{ category }}
+                        <span id="{{ category }}-total">0円</span>
+                    </li>
+                    {% endfor %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center fw-bold">
+                        総合計
+                        <span id="grand-total">0円</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <ul class="nav nav-tabs nav-fill mb-3" id="myTab" role="tablist">
+            {% for category in data['items'] %}
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {% if loop.first %}active{% endif %}" id="{{ category }}-tab" data-bs-toggle="tab" data-bs-target="#{{ category }}-pane" type="button" role="tab">{{ category }}</button>
+            </li>
+            {% endfor %}
+        </ul>
+        <div class="tab-content" id="myTabContent">
+            {% for category, items in data['items'].items() %}
+            <div class="tab-pane fade {% if loop.first %}show active{% endif %}" id="{{ category }}-pane" role="tabpanel" tabindex="0">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">{{ category }}</h5>
+                    </div>
+                    <ul class="list-group list-group-flush" id="{{ category }}-list">
+                        {% for item in items %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                {{ item['name'] }} ({{ "{:,}".format(item['price']) }}円)
+                                <div class="input-group input-group-sm mt-1">
+                                    <button class="btn btn-outline-secondary btn-decrease-quantity" type="button" data-category="{{ category }}" data-name="{{ item['name'] }}">-</button>
+                                    <input type="number" class="form-control text-center quantity-input" value="{{ item['quantity'] }}" data-category="{{ category }}" data-name="{{ item['name'] }}" style="width: 60px;">
+                                    <button class="btn btn-outline-secondary btn-increase-quantity" type="button" data-category="{{ category }}" data-name="{{ item['name'] }}">+</button>
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center">
+                                <span class="badge bg-primary rounded-pill me-2">{{ "{:,}".format(item['price'] * item['quantity']) }}円</span>
+                                <button class="btn btn-danger btn-sm btn-delete-item" data-category="{{ category }}" data-name="{{ item['name'] }}"><i class="fas fa-trash-alt"></i></button>
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    <div class="card-footer">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <input type="text" class="form-control" placeholder="商品名" id="item-name-{{ category }}">
+                            </div>
+                            <div class="col-3">
+                                <input type="number" class="form-control" placeholder="単価" id="item-price-{{ category }}">
+                            </div>
+                            <div class="col-3">
+                                <input type="number" class="form-control" placeholder="個数" id="item-quantity-{{ category }}">
+                            </div>
+                        </div>
+                        <button class="btn btn-success w-100 mt-2 add-item-btn" data-category="{{ category }}">追加</button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const data = {{ data | tojson }};
+
+        document.addEventListener('DOMContentLoaded', () => {
+            updateTotals();
+
+            document.getElementById('update-budget-btn').addEventListener('click', () => {
+                const newBudget = document.getElementById('new-budget-input').value;
+                if (newBudget) {
+                    fetch('/update_budget', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ budget: newBudget })
+                    }).then(() => {
+                        window.location.reload();
+                    });
+                }
+            });
+
+            document.querySelectorAll('.add-item-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const category = e.target.dataset.category;
+                    const name = document.getElementById(`item-name-${category}`).value;
+                    const price = document.getElementById(`item-price-${category}`).value;
+                    const quantity = document.getElementById(`item-quantity-${category}`).value;
+
+                    if (name && price && quantity) {
+                        fetch('/add_item', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ category, name, price, quantity })
+                        }).then(() => {
+                            window.location.reload();
+                        });
+                    }
+                });
+            });
+
+            document.querySelectorAll('.btn-delete-item').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const category = e.currentTarget.dataset.category;
+                    const name = e.currentTarget.dataset.name;
+
+                    if (confirm(`「${name}」をリストから削除しますか？`)) {
+                        fetch('/delete_item', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ category: category, name: name })
+                        }).then(() => {
+                            window.location.reload();
+                        });
+                    }
+                });
+            });
+
+            document.querySelectorAll('.quantity-input').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const category = e.target.dataset.category;
+                    const name = e.target.dataset.name;
+                    const quantity = e.target.value;
+
+                    if (quantity < 1) {
+                        e.target.value = 1;
+                        return;
+                    }
+                    
+                    fetch('/update_quantity', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ category: category, name: name, quantity: quantity })
+                    }).then(() => {
+                        window.location.reload();
+                    });
+                });
+            });
+
+            document.querySelectorAll('.btn-decrease-quantity').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const category = e.currentTarget.dataset.category;
+                    const name = e.currentTarget.dataset.name;
+                    const input = e.currentTarget.nextElementSibling;
+                    let newQuantity = parseInt(input.value) - 1;
+                    
+                    if (newQuantity < 1) {
+                        if (confirm(`「${name}」をリストから削除しますか？`)) {
+                           fetch('/delete_item', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ category: category, name: name })
+                            }).then(() => {
+                                window.location.reload();
+                            });
+                        }
+                    } else {
+                        input.value = newQuantity;
+                        fetch('/update_quantity', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ category: category, name: name, quantity: newQuantity })
+                        }).then(() => {
+                            window.location.reload();
+                        });
+                    }
+                });
+            });
+
+            document.querySelectorAll('.btn-increase-quantity').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const category = e.currentTarget.dataset.category;
+                    const name = e.currentTarget.dataset.name;
+                    const input = e.currentTarget.previousElementSibling;
+                    const newQuantity = parseInt(input.value) + 1;
+                    input.value = newQuantity;
+
+                    fetch('/update_quantity', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ category: category, name: name, quantity: newQuantity })
+                    }).then(() => {
+                        window.location.reload();
+                    });
+                });
+            });
+        });
+
+        function updateTotals() {
+            let grandTotal = 0;
+            for (const category in data.items) {
+                let categoryTotal = 0;
+                data.items[category].forEach(item => {
+                    categoryTotal += item.price * item.quantity;
+                });
+                document.getElementById(`${category}-total`).textContent = `${categoryTotal.toLocaleString()}円`;
+                grandTotal += categoryTotal;
+            }
+            document.getElementById('grand-total').textContent = `${grandTotal.toLocaleString()}円`;
+            document.getElementById('total-cost').textContent = `${grandTotal.toLocaleString()}`;
+            
+            const remaining = data.budget - grandTotal;
+            const remainingEl = document.getElementById('remaining-budget');
+            remainingEl.textContent = `残り予算: ${remaining.toLocaleString()}円`;
+            remainingEl.style.color = remaining >= 0 ? 'green' : 'red';
+        }
+    </script>
+</body>
+</html>
